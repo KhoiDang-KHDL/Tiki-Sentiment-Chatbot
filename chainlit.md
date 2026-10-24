@@ -1,14 +1,12 @@
-# Welcome to Chainlit! 🚀🤖
+# Tiki Sentiment Chatbot
 
-Hi there, Developer! 👋 We're excited to have you on board. Chainlit is a powerful tool designed to help you prototype, debug and share applications built on top of LLMs.
+Tìm sản phẩm và tổng hợp đánh giá theo sáu khía cạnh: chất lượng, giá cả, mô tả,
+dịch vụ, đóng gói và giao hàng.
 
-## Useful Links 🔗
+- Nhập tên sản phẩm hoặc yêu cầu tìm kiếm.
+- Gửi URL sản phẩm Tiki để xem báo cáo đánh giá.
+- Hỏi tiếp về sản phẩm vừa phân tích hoặc yêu cầu sản phẩm thay thế.
+- Dùng `/clear` để bắt đầu hội thoại mới.
 
-- **Documentation:** Get started with our comprehensive [Chainlit Documentation](https://docs.chainlit.io) 📚
-- **Discord Community:** Join our friendly [Chainlit Discord](https://discord.gg/k73SQ3FyUh) to ask questions, share your projects, and connect with other developers! 💬
-
-We can't wait to see what you create with Chainlit! Happy coding! 💻😊
-
-## Welcome screen
-
-To modify the welcome screen, edit the `chainlit.md` file at the root of your project. If you do not want a welcome screen, just leave this file empty.
+Câu trả lời có nguồn tham khảo. Thông tin trong Knowledge Base có thể khác giá
+hoặc tình trạng sản phẩm hiện tại trên Tiki.
