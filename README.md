@@ -303,6 +303,3 @@ Crawl availability phụ thuộc Tiki API; generation phụ thuộc model/quota 
 [Incremental KB](source/knowledge_base/INCREMENTAL.md) · [Airflow](airflow/README.md) ·
 [Monitoring](monitoring/README.md) · [CI](CI.md) · [Crawling](source/crawling/README.md)
 
-Bản tái hiện tham khảo kiến trúc từ
-[sentiment-chatbot-mlops](https://github.com/phngahn/sentiment-chatbot-mlops).
-Runtime, provider, DAG và phạm vi triển khai được điều chỉnh theo code trong repository này.
