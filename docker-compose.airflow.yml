@@ -1,0 +1,153 @@
+name: tiki-absa-airflow
+
+x-airflow-common: &airflow-common
+  image: tiki-absa-airflow:3.3.2
+  build:
+    context: .
+    dockerfile: docker/airflow.Dockerfile
+  user: "${AIRFLOW_UID:-50000}:0"
+  working_dir: /opt/tiki
+  environment: &airflow-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:${AIRFLOW_POSTGRES_PASSWORD:?Run setup first}@postgres/airflow
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
+    AIRFLOW__CORE__DEFAULT_TIMEZONE: Asia/Ho_Chi_Minh
+    AIRFLOW__CORE__PARALLELISM: "1"
+    AIRFLOW__CORE__MAX_ACTIVE_TASKS_PER_DAG: "1"
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.api_fastapi.auth.managers.simple.simple_auth_manager.SimpleAuthManager
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: admin:admin
+    AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/config/passwords.json
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: http://airflow-api-server:8080/execution/
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:?Run setup first}
+    AIRFLOW__API__SECRET_KEY: ${AIRFLOW_API_SECRET:?Run setup first}
+    AIRFLOW__API__WORKERS: "1"
+    AIRFLOW__DAG_PROCESSOR__PARSING_PROCESSES: "1"
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    AIRFLOW__SCHEDULER__CATCHUP_BY_DEFAULT: "false"
+    AIRFLOW__LOGGING__LOGGING_LEVEL: INFO
+    PYTHONPATH: /opt/tiki
+    TIKI_PROJECT_ROOT: /opt/tiki
+    TIKI_ML_PYTHON: /opt/tiki-venv/bin/python
+    QDRANT_URL: ${QDRANT_URL:-http://qdrant:6333}
+    QDRANT_COLLECTION: ${QDRANT_COLLECTION:-tiki_kb_test}
+    KB_ABSA_MODEL: ${KB_ABSA_MODEL:-logreg}
+    KB_PIPELINE_REVISION: ${KB_PIPELINE_REVISION:-1}
+    KB_INDEX_BATCH_SIZE: ${KB_INDEX_BATCH_SIZE:-2}
+    KB_MAX_LENGTH: ${KB_MAX_LENGTH:-1024}
+    KB_SCHEDULE: ${KB_SCHEDULE:-*/15 * * * *}
+    KB_MAX_BATCHES: ${KB_MAX_BATCHES:-4}
+    EMBEDDING_DEVICE: cpu
+    HF_HOME: /opt/hf-cache
+    HF_HUB_CACHE: /opt/hf-cache/hub
+    HF_HUB_OFFLINE: ${HF_HUB_OFFLINE:-1}
+    TOKENIZERS_PARALLELISM: "false"
+    OMP_NUM_THREADS: "2"
+    MKL_NUM_THREADS: "2"
+    PYTHONUNBUFFERED: "1"
+  volumes:
+    - ./source:/opt/tiki/source:ro
+    - ./scripts:/opt/tiki/scripts:ro
+    - ./tests:/opt/tiki/tests:ro
+    - ./data:/opt/tiki/data
+    - ./models:/opt/tiki/models:ro
+    - ./airflow/dags:/opt/airflow/dags:ro
+    - ./airflow/logs:/opt/airflow/logs
+    - airflow_config:/opt/airflow/config
+    - type: bind
+      source: ${HF_HUB_CACHE_HOST:?Run setup first}
+      target: /opt/hf-cache/hub
+  networks:
+    - airflow
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  airflow-permissions:
+    image: tiki-absa-airflow:3.3.2
+    profiles: [tools]
+    user: "0:0"
+    entrypoint: [python, -c]
+    command:
+      - "import os; os.chown('/config', int(os.environ['TASK_UID']), 0); os.chmod('/config', 0o770)"
+    environment:
+      TASK_UID: ${AIRFLOW_UID:-50000}
+    volumes:
+      - airflow_config:/config
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD:?Run setup first}
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - airflow
+    restart: unless-stopped
+
+  airflow-init:
+    <<: *airflow-common
+    profiles: [tools]
+    environment:
+      <<: *airflow-env
+      TIKI_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:?Run setup first}
+    command: [bash, -c, "airflow db migrate && python -m scripts.airflow_init"]
+    restart: "no"
+
+  airflow-api-server:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "127.0.0.1:${AIRFLOW_UI_PORT:-8080}:8080"
+    healthcheck:
+      test: [CMD, curl, --fail, http://localhost:8080/api/v2/monitor/health]
+      interval: 15s
+      timeout: 10s
+      start_period: 60s
+      retries: 10
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    hostname: airflow-scheduler
+    command: scheduler
+    depends_on:
+      postgres:
+        condition: service_healthy
+      airflow-api-server:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, curl, --fail, http://localhost:8974/health]
+      interval: 20s
+      timeout: 10s
+      start_period: 60s
+      retries: 6
+    restart: unless-stopped
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    healthcheck:
+      test: [CMD-SHELL, 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 20s
+      start_period: 90s
+      retries: 6
+    restart: unless-stopped
+
+networks:
+  airflow:
+    external: true
+    name: ${AIRFLOW_NETWORK:-tiki-absa-airflow-network}
+
+volumes:
+  airflow_postgres:
+  airflow_config:
